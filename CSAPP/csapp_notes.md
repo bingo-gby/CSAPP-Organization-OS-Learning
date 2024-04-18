@@ -31,5 +31,22 @@ std::bitset<4> binaryRepresentation1(number1);
 std::cout << binaryRepresentation1 << std::endl; // 0111
 ```
 可以通过bitset容器打印出其二进制表示。
+在一个不等式中，unsigned 和 signed比较，会自动进行类型转换，都转成unsigned进行比较，会+/- 2^w。如果两个类型相同，那就不需要进行转换了。这里有个需要注意的地方：
+```
+// 这样会报错，因为unsigned会一直大于0，下面溢出后，会直接回绕成2^32 -1,然后就会访问未定义的内存，触发未定义行为
+int main(){
+    int a[5]={1,1,1,1,1};
+    for( unsigned int i=4;i>=0;i--){
+        cout<<a[i]<<endl;
+    }
+    return 0;
+}
+
+// 那如果将循环改成这个呢，同样报错，因为sizeof()返回unsigned，然后int也会转为unsigned。
+for(int i=4;i-sizeof(char)>=0;i--)
+```
+实际使用中，还会用到signed Extension（例如一个8位的有符号整型要变成32位的有符号整型），如果是正数（前面补24位0即可），如果是负数就在前面补24位1即可。这可以解释一下算术右移前面补1的情况。证明如下（假设从m位扩充到n位）：
+$$ X_{ago} = a - 2^{m-1}, X_{now} = X_{ago}+2^{m}+2^m*{(2^{n-m-1}-1)-2^{n-1} = X_{ago} }$$
+那如果是 Truncating(截断，例5位变4位，unsigned类型)，直接取mod。例如 11011（27）变成 1011（11）直接 27%16=11。16为2的4次方（截断之后的位数）。如果是signed类型貌似没啥规律。
 
 
