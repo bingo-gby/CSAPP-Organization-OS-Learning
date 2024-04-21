@@ -1,7 +1,23 @@
+<!-- TOC -->
+
+- [CSAPP概述](#csapp概述)
+- [1. 数据的表示](#1-数据的表示)
+  - [1. int 和 unsigned int](#1-int-和-unsigned-int)
+  - [2. float](#2-float)
+  - [3. bytes order](#3-bytes-order)
+- [2.程序的机器表示](#2程序的机器表示)
+  - [1. Basics](#1-basics)
+  - [2. Control](#2-control)
+    - [1. 条件执行](#1-条件执行)
+    - [2. 条件分支操作](#2-条件分支操作)
+    - [3. 循环](#3-循环)
+    - [4. switch 操作](#4-switch-操作)
+
+<!-- /TOC -->
 # CSAPP概述
 太多lab了，后面挑自己不是很理解的部分做做lab吧。
 
-# 数据的表示
+# 1. 数据的表示
 
 ## 1. int 和 unsigned int
 everything is bits，0 or 1。主要方便存储。一般二进制中的小数点含义类似于十进制：右边第一位代表2^-1,第二位代表2^-2。1字节=8 bits，通常4个比特位用一个16进制的0-F来表示。因此一个字节就是两个16进制数。可以进行训练，2进制和16进制之间的转换，记住几个主要的表示即可。
@@ -91,5 +107,129 @@ int main(){
 }
 // 计算 15123 = 3* 16^3 + 11*16^2 + 6*16 +13, 所以表示应该是 3b6d,所以是小端序。
 ```
-# 程序的机器表示
+# 2.程序的机器表示
 
+## 1. Basics
+教读汇编，主要教学x86下的，也被称作8086。两种指令集 CISC （complex） 和 RISC（reduced）。CISC过渡到RISC。一般x86是CISC，Arm是RISC（常用于移动端）
+>举例说明： MOV AX, [BX+SI]  ; 将BX+SI指向的内存地址的内容移动到AX寄存器，但是Arm底下的RISC：
+LW R1, 0(R2)  ; 从R2寄存器的基址0加载一个字到R1寄存器，通常只有一个基本操作。一个字通常指的是计算机一次能够处理或传输的数据量。这个概念与计算机的字长（word size）紧密相关，例如，一个32位计算机的“一个字”就是32位，或者说4个字节。
+
+汇编中一些对程序员隐藏的处理器状态，但是汇编中可见的：
+1. 程序计数器（PC，x86-64中用%rip表示）：给出将要执行的下一条指令在内容中的地址。
+2. 寄存器文件：可以储存很多东西。还有一些状态寄存器（16个整数寄存器）
+
+<img src="photos/寄存器.jpg" width="75%">  
+
+
+内存可以看作一个字节数组，虚拟内存看起来像是独立的字节数组，但是在物理上却是共享的。编译过程分为预处理 编译（生成汇编代码） 汇编（binnary） 链接（binary）。编译命令：`gcc -Og -S filename ` 将filename 编译成汇编代码，-Og 代表优化编译后的结果。同时也可以用 objdump 反汇编 可执行文件，得到是一些指令与其对应的字节(`objdump -d xxx> xxx.txt`,代表重定向到txt文件)。也可以用gdb，先`gdb file`，然后 `disassemble your_func` (反汇编你的函数，注意不是程序，前面的file是程序)。
+
+<img src="photos/gdb.png" width="75%">  
+
+>1. 还有个常用的栈指针寄存器 %rsp（stack pointer），可以稍微记一下。%exx 是代表 32位寄存器，%rxx代表64位寄存器（在不断优化）。  
+>2. 针对moving data的操作数，存在3种类型：（1）立即数，就是常数值（2）寄存器，用ra,ra代表寄存器名字（3）也可以用地址或者（ra）表示ra寄存器里面存储的内存地址。 所以可以有三种表示：movq $0x400, %rax 和 movq %rax, %rbx 和 movq %rax, (%rdx)。另外补充一下内存引用语法是 Imm(rb,ri,s),操作数值就是 Memory [Imm（偏移量） + R[rb]（基地址） + R[ri]*s（比例因子，为 1,2,4,8）]。R代表寄存器数组，rb，ri寄存器就类似索引，来得到寄存器内容。 ps： movq不能直接从内存**复制**到内存，且movq 是从第一个复制到第二个 注意！！！  
+>3. leaq: 类似于&，将有效地址写入目标操作数。第一个操作数像内存引用 范式。例如 rdx寄存器存着x值，rsx存着y值，那么 leaq 7(%rdx,%rsx,4), %rax ,就是把7+x+4y copy到 rax。
+
+另外汇编代码格式也存在 ATT 和 Intel。常用的gcc就是 ATT format的
+> 1. ATT是 source 前 ，destination在后； Intel相反
+> 2. ATT 是()寻址，Intel是[]寻址，还有指令名称存在差异，如 movq（ATT） 和 mov（Intel）
+> 3. 还有很多常用指令有空再翻书看把...
+
+## 2. Control
+前面主要讲指令的顺序执行，但是对于某些条件语句，循环语句都是有条件的执行。这里主要讲怎么实现条件执行。然后描述 循环 和 switch 的实现。ps：jump 可以指定跳到程序的某些地方。
+
+### 1. 条件执行
+条件码：一些标志位，条件指令执行的基础。CPU维护者一组单个位的条件码寄存器。所有的算术和逻辑操作都会设置条件码。
+1. CF(carry flag):最高位进位标志，产生额外的位。用来看 unsigned 溢出
+2. SF(sign Flag) 符号标志，最近的操作得出的结果为负数就置为1
+3. OF(over Flag) for signed，最近操作溢出
+4. ZF(zero Flag) 最近操作为0
+
+条件码设置可以通过以下：
+1. Compare： cmpq b,a 类似于计算a-b（参数顺序倒了），然后condition code 根据 a-b 大小来设置。一般有两个数就用 cmpq。ps：参数列出顺序跟形参相反，所以后面比大小就根据形参位置来就行。
+2. Test：testq b,a 类似于计算a&b。通常可以跟一个掩码操作。 ZF 1 when a&b=0,SF 1 when a&b<0。可以理解为compare 和 test 之后，条件码自己会变。
+3. set：根据条件码的组合设置一个字节为0/1。目标操作数通常是一个字节寄存器或者一个字节内存。所以如果要变成32位/64位，高位清0。（这里一个字节寄存器代表寄存器的低位，高位的7个字节不变，寄存器可以翻阅csapp中文版120页）。所以通常情况如下：
+```
+setg %al // al为rax的低位一字节
+movzbl %al, %eax // zero rest of rax, movzbl就是扩展宽字节的意思，前面补0
+ret
+// 为什么是eax，那怎么确保前面32位呢？这是amd的默认的，对四字节的操作默认会把前面四个字节置为0
+```
+
+### 2. 条件分支操作
+主要通过 jX 指令去跳转。例如 jmp(但是这个是随意跳转，jmp也有间接跳转：jmp *%rax,用rax内的值作为跳转目标。jmp *(%rax):读rax中存的地址指向的值为跳转目标)，我们主要关注的就是根据状态码去跳转，用jX，这种跳转是直接跳转。举例说明：jle（le代表 lower and equal,就是≤）。代码示例：
+```
+// 源码
+long absdiff(long x,long y){
+    long resule;
+    if(x>y) result = x-y;
+    else: result = y-x;
+    return result;
+}
+// 汇编
+absdiff:
+    cmpq %rsi,%rdi   // rdi:x rsi:y,前面说过的与形参顺序相反
+    jle .L4
+    movq %rdi, %rax // rax:x
+    subq %rsi % rax  // rax:x-y
+    ret
+.L4：
+    movq % rsi %rax
+    subq %rdi %rax  
+    ret
+// 这里为什么要用 rax,翻阅前面寄存器作用可以看到，rax常用作返回值
+```
+C中的 goto语句有点像 jmp。所以一般普通的if else 语句可以直接用C的goto Version来代替汇编的阅读，后面都这么用。
+
+<img src="photos/goto.png" width="75%">  
+
+传统条件操作是用上述的控制条件转移，但实际上在现代处理器上，使用 **数据的条件转移** 更高效。
+主要是因为现代处理器都是使用重叠连续指令的方式来获得高性能。而分支预测错误可能导致指令要重新取。所以用数据条件转移更好，如下：**先把两种条件下的值都算出来**，但是这种不一定能够转换过来，需要两个计算简单都安全。GCC默认数据的条件转移。
+
+<img src="photos/data.png" width="75%">  
+
+### 3. 循环
+循环也属于控制结构的一环。有 for循环 while循环，do-while循环（最不常见）。
+1. do-while
+```
+// do-while示例
+do:
+    state
+    while(test-expr)
+// goto 版本
+loop:
+    state
+    if(test-expr) goto loop
+```
+while 跟 do-while差不多
+```
+while(test-expr){
+    state;
+}
+
+// goto 版本
+    go to test;
+loop:
+    state
+test:
+    if(test-expr) goto loop
+```
+**跳到中间来，然后顺序执行**。针对两个还有个通用版本（guarded-do策略），先把while转为do-while，然后写。
+
+<img src="photos/general.png" width="75%"> 
+
+2. for循环（用的很多）
+`for(Init,Test,Update) Body;` 是for循环基本结构。可以直接转为while循环。
+```
+Init;
+while(Test){
+    Body;
+    Update;
+}
+```
+### 4. switch 操作
+switch跟前面不太一样，有很多个判断语句（switch-case，要通过break跳出。存在以下情况：
+1. 分支比较多
+2. 分支没有break的话，会跳到下一分支
+3. 分支也有可能 do-nothing
+
+使用跳表机制，跳表机制就是把所有的case下的body都放入一个表中，按照索引区分。
