@@ -1,7 +1,7 @@
 # CSAPP-Organization-OS learning
 以CSAPP为启蒙，并行进行计组和操作系统的学习。
 参考视频(均来源于B站，也可自行上Mooc搜索)：
->[CSAPP](https://www.bilibili.com/video/BV1iW411d7hd)  
+>[CSAPP](https://www.bilibili.com/video/BV1iW411d7hd),[课件及作业](https://www.cs.cmu.edu/afs/cs/academic/class/15213-f15/www/schedule.html)  
 >[计算机组成原理 哈工大 刘宏伟](https://www.bilibili.com/video/BV1Xu411r7Vz/ )  
 > [操作系统 哈工大 李治军](https://www.bilibili.com/video/BV19r4y1b7Aw/?vd_source=4ccd60c5b5741e79bac2b2080f4a82d6) 
 
