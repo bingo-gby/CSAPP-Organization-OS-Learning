@@ -30,8 +30,22 @@ namespace J2{
         return 0;
     }
 }
+// 判断大小端
+namespace J3{
+    int main(){
+        union{
+            char c;
+            int i;
+        } u;
+        u.i = 0x12345678;
+        printf("%x\n", u.c);
+        return 0;
+    }
+}
 int main(){
     // J1::main();
-    J2::main();
+    // J2::main();
+    J3::main();
+
     return 0;
 }
