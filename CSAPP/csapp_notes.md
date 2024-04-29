@@ -34,6 +34,8 @@
   - [4. 库文件](#4-库文件)
     - [1. 静态库](#1-静态库)
     - [2. 动态库](#2-动态库)
+    - [3. library Interposition](#3-library-interposition)
+- [6. 异常控制流（ECF）](#6-异常控制流ecf)
 
 <!-- /TOC -->
 # CSAPP概述
@@ -546,3 +548,8 @@ gcc -Og -o prog main.c sum.c。分别编译main.c 和 sum.c 变成 main.o(可重
 动态库就是链接的时候先留个记录（记录在符号表中），实际运行的时候再加载进去。
 
 <img src="photos/so.png" width="75%"> 
+
+### 3. library Interposition
+就是允许程序员拦截对任意函数的调用，可以发生在编译时，链接时，运行时。通常用来调试。这里不做过多了解，感兴趣自己看书....
+
+# 6. 异常控制流（ECF）
