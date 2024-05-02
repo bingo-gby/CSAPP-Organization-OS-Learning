@@ -263,3 +263,60 @@ switch_to(next);
 4. 每个进程只用维护一个counter变量，简单、高效
 
 ### 4. 进程同步与信号量
+进程同步通过信号，A进程等信号，B进程发信号。这里的信号就是信号量。并且信号量对应睡眠和唤醒，且要记录有多少个进程在等待，那么就要唤醒多少次。如下：
+
+<img src="photos/信号.png" width="75%"> 
+
+看上面，什么时候-1，什么时候+1：正的:供小于求，负的:供大于求....  信号量定义如下,是一种特殊的整型：
+```
+struct semaphore
+{
+	int value; //记录资源个数
+	PCB *queue;
+	//记录等待在该信号量上的进程
+}
+P(semaphore s); //要消费资源	test一下
+V(semaphore s); //产生资源
+
+P(semaphore s)
+{
+	s.value--; //申请资源
+	if(s.value < 0) { //没有
+		sleep(s.queue);  //阻塞
+    }
+}
+
+V(semaphore s) //消费者调用
+{
+    s.value++;
+    if(s.value <= 0) { // p中睡眠的 s
+        wakeup(s.queue); //唤醒
+    }
+}
+```
+以生产者和消费者示例为例(生产者可以有多个)：
+```
+// 共享数据
+#define BUFFER_SIZE 10
+typedef struct{...} Item;
+Item buffer[BUFFER_SIZE];
+int in =0,out=0,counter=0;
+
+//生产者进程,counter存着元素个数
+while(true){
+  while(counter == BUFFER_SIZE)  sleep()
+  buffer[in] = item;
+  in = (in+1)%BUFFER_SIZE
+  counter++;
+  if(counter==1) wake
+}
+
+// 消费者进程
+while(true){
+  while(counter == 0)  消费者停
+  item = buffer[out];
+  out = (out+1)%BUFFER_SIZE
+  counter--;
+
+}
+```
