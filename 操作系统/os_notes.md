@@ -22,6 +22,7 @@
   - [1. 内存使用](#1-内存使用)
   - [2. 内存分区和分页](#2-内存分区和分页)
   - [3. 多级页表跟快表](#3-多级页表跟快表)
+  - [4. 段页结合Code示例](#4-段页结合code示例)
 
 <!-- /TOC -->
 
@@ -413,5 +414,85 @@ Consumer() {
 
 ## 3. 多级页表跟快表
 为了提高内存使用率，页应该小，但是页小，页表项增加，页表大了,页表中的页号都是逻辑页号，页框才是物理的。页表大，页表的放置就存在问题，页面尺寸通常4K，地址是32位的，那就是有 2^20个页，都要放在内存中，每个页表项通常4Byte，那就是 4M,并发10个进程，就是 40M内存... 所以需要把页表尽量搞小点
-1. 尝试只放用到的页
+1. 尝试只放用到的页：但是这样查页表太麻烦了...需要多次访问内存中的页表
+2. 所以必须连续的页（访问一次就够了），要不然查找起来太麻烦。所以页表的表项降不下来..类比书的目录，可以有多级目录，依次定位到哪一页.. 使用页目录号 + 页号 + 页内偏移，如下所示：  
+    <img src="photos/dy.png" width="75%">  
+    
+    但是多级页表增加了访存的次数，多找了一次，所以用快表弥补（TLB）是相联快速存储寄存器，可以快速根据逻辑页找到物理页，跟缓存很像...如果TLB命中就非常好，没有命中就通过多级页表去查，然后将其放在快表中。  
+    <img src="photos/dy1.png" width="75%">   
 
+果然，Cache机制在计算机里面无处不在...由于程序的局部性
+## 4. 段页结合Code示例
+程序员希望用段，物理内存希望用页，所以需要段页结合的虚拟内存,虚拟内存将段和页的功能结合.. 逻辑地址 -> 虚拟内存 -> 物理内存  
+<img src="photos/s1.png" width="75%">  
+用户给的地址还是段号+ 偏移（CS:IP,逻辑地址）然后计算得到虚拟地址，然后通过页表得到物理地址，将物理地址发到总线上去取址执行。  
+从fork开始：fork() -> sys_fork -> copy_process copy_process 就是复制进程的上下文状态..  
+```
+//在linux/kernel/fork.c中
+int copy_process(int nr, long ebp,...)
+{ ...
+copy_mem(nr, p); ...
+}
+```
+直接看 copy_mem函数...
+```
+int copy_mem(int nr, task_struct *p)
+{
+unsigned long new_data_base;
+new_data_base=nr*0x4000000; //64M*nr	分割虚拟内存  nr为进程的索引，意味着每个进程64M，互不重叠
+set_base(p->ldt[1],new_data_base); // 完成对段表的填写  ldt
+set_base(p->ldt[2],new_data_base); 
+    ...
+}
+```
+接下来就是分页，虚拟地址对应页... 这里有个简化，就是进程互不重叠，那么可以共用页表（实际上肯定会重叠的，主要这是Linux0.1比较简单）。  
+```
+int copy_mem(int nr, task_struct *p) //不用分配内存，用父进程
+{
+  unsigned long old_data_base;
+  old_data_base=get_base(current->ldt[2]);
+  copy_page_tables(old_data_base,new_data_base,data_limit); // 将父进程的页 copy..
+  ...
+}
+
+int copy_page_tables(unsigned long from,unsigned long to, long size) //建页表
+{ 
+  from_dir = (unsigned long *)((from>>20)&0xffc);   
+  to_dir = (unsigned long *)((to>>20)&0xffc);
+  size = (unsigned long)(size+0x3fffff)>>22;
+  for(; size-->0; from_dir++, to_dir++)
+  {
+    from_page_table=(0xfffff000&*from_dir);   // 取页号
+    to_page_table=get_free_page(); // 新页
+    
+    ....
+```
+
+```
+from_dir = (unsigned long *)((from>>20)&0xffc);
+to_dir = (unsigned long *)((to>>20)&0xffc);
+size = (unsigned long)(size+0x3fffff)>>22;
+from是32位虚拟地址，from>>22得到目录项编号 (from>>22)4每项4字节
+&0xffc 把最后两位清为0
+```
+上面是取页目录号，现在就取页号..
+```
+for(; size-->0; from_dir++, to_dir++){
+  to_page_table=get_free_page();	//建立映射	虚拟地址——物理地址
+  *to_dir=((unsigned long)to_page_table)|7; //赋予页目录的地址
+```
+<img src="photos/1.png" width="75%"> 
+
+然后就是把源目录页东西拷贝过去...
+```
+for(;nr-->0;from_page_table++,to_page_table++){
+  this_page = *from_page_table;   // 取出内容
+  this_page&=~2;//只读	因为是共享的，所以是只读的，  &~2——把最后两位清0   这里是共享的，实际上指向的还是同一个物理内存
+  *to_page_table=this_page;    // 赋给 to_page_table
+  *from_page_table=this_page;
+  this_page -= LOW_MEM; this_page >>= 12;
+  mem_map[this_page]++; //共享 引用+1 
+  .....
+}
+```
+这里只是建了个页表，指向同一内存..
