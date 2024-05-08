@@ -24,6 +24,10 @@
   - [3. 多级页表跟快表](#3-多级页表跟快表)
   - [4. 段页结合Code示例](#4-段页结合code示例)
   - [5. 内存换入与换出](#5-内存换入与换出)
+- [4. IO设备与文件系统](#4-io设备与文件系统)
+  - [1. IO设备](#1-io设备)
+    - [1. 显示器](#1-显示器)
+    - [2. 键盘](#2-键盘)
 
 <!-- /TOC -->
 
@@ -504,4 +508,81 @@ for(;nr-->0;from_page_table++,to_page_table++){
 <img src="photos/sw.png" width="75%">  
 当换入的时候，虚拟内存映射的物理地址不存在时，发生缺页错误，需要请求调页（中断），硬件帮做，cpu去干其他的。页错误处理程序就是从磁盘中加载指令和数据在物理内存中找个空闲处放进去，然后更新页表。    
 <img src="photos/qy.png" width="75%">  
-实际系统的请求调页如下,从缺页中断（14号中断）开始，用page_fault处理中断
+实际系统的请求调页如下,从缺页中断（14号中断）开始，用page_fault处理中断，主要函数就是 do_no_page(从磁盘中移入物理内存，更新页表)：
+```
+//在linux/mm/memory.c中
+void do_no_page(unsigned long error_code,unsigned long address)
+{
+  address&=0xfffff000; //页面地址,把最后12位去掉
+  tmp=address–current->start_code; //页面对应的偏移
+  if(!current->executable||tmp>=current->end_data){
+  get_empty_page(address); return; }
+  page=get_free_page();   // 得到物理空闲页
+  bread_page(page, current->executable->i_dev, nr); //读文件系统
+  put_page(page, address); //建立虚拟地址和页的映射 page就是物理空闲页的地址， address就是虚拟地址
+
+// 看put_page函数
+//在linux/mm/memory.c中
+unsigned long put_page(unsigned long page,unsigned long address)
+{
+  unsigned long tmp， *page_table;
+  page_table=(unsigned long *)((address>>20)&ffc); //页目录项 前面讲过的
+  if((*page_table)&1) // 检查最低位是否有效
+    page_table=(unsigned long*)(0xfffff000&*page_table);
+  else{
+    tmp=get_free_page();
+    *page_table=tmp|7;
+    page_table=(unsigned long*)tmp;
+  }
+    page_table[(address>>12)&0x3ff] = page|7;   //物理页放在page_table
+    return page;
+}
+// 通常代码只是伪代码，不需要看具体实现，大概了解流程即可...毕竟代码也不全
+```
+上述是内存换入（从磁盘到物理内存），现在讲内存换出,类比于商店跟仓库，如果商店满了，仓库里拿东西进商店，那么对应商店也有东西要进仓库（物理内存到磁盘）。主要就是上面的 get_free_page(),并不能总是获得新的页，那么选择哪一页换出到磁盘？LRU（选择最近最少使用的）。怎么实现？  
+1. 每页维护一个时间戳，选最小时间戳的那一页，实际不太好处理，因为每执行一条指令都要更新，且时间戳容易溢出
+2. 页码栈，也麻烦，在栈里要移动比较多次东西..
+3. LRU近似实现：将时间计数变为是和否，用一个位，访问了就置为1，选择淘汰页时，扫描该位，是1时清0（给第二次机会），继续扫描，是0就淘汰。就是看最近没有使用 近似 最近最少使用，主要是改一位，且硬件MMU实现，所以代价较小...
+   上面Clock算法的改进：
+   1. 缺页很少，所有的R=1，搜索一圈回到开始，页面置换效果不好，所以选择一个指针扫描用来清除R位（快指针），选择淘汰页，用移动速度慢的指针，双指针像时钟，所以叫clock算法...
+
+置换策略有了，那么分配多少页框（帧）。进程增多->缺页率增大 -> CPU利用率下降，因为时间都用在磁盘和内存中数据交换.. 这个现象称之为颠簸..  
+ps: 磁盘跟内存那个交换区就叫做 swap分区
+
+# 4. IO设备与文件系统
+## 1. IO设备
+### 1. 显示器
+操作系统给用户提供文件视图，对应不同的设备，不同设备有不同的文件视图。通常不管是什么设备，都是统一的接口，例如open、read、write等，不同设备对应不同的设备文件，根据设备文件找到对应控制器地址、内容格式等。外设驱动的三件事情：
+1. 发出out指令(最核心的指令)
+2. 形成文件视图
+3. 形成中断处理
+
+文件视图如下：  
+<img src="photos/file.png" width="75%">  
+
+以printf为例，printf就是把字符保存到buf里面，然后write..
+```
+// 在linux/fs/read_write.c中
+int sys_write(unsigned int fd, char *buf,int count) //fd是找到file的索引! 文件描述符
+{
+  struct file* file;
+  file = current->filp[fd];  //current为当前进程， filp是打开文件的指针
+  inode = file->f_inode;     // inode为文件的某些信息
+
+```
+fd =1 的flip是fork得到的.. 最开始肯定是shell（父进程）打开的，其实就是终端设备
+```
+int copy_process(...)
+{
+  *p = *current;
+  for (i=0; i<NR_OPEN;i++)
+  if ((f=p->filp[i])) f->f_count++;     // f_count就是打开文件的个数
+```
+核心步骤如下：  
+<img src="photos/inode.png" width="75%">  
+这个inode其实就是除了文件名以外的所有信息，fd=1，就是dev/tty0的设备，最后write都是跳转到 out 输出...(终端设备就是键盘和显示器，一个读一个写)  
+主要汇编就是 mov ax,pos. 将缓存区内写入显存寄存器（pos），写完一个就pos+=2,为什么是2，因为不仅有字符还有字符属性。具体过程如下：    
+<img src="photos/write.png" width="75%">  
+上面的汇编 mov pos,c 是把c移到pos，不同的汇编format而已，printf主要就是将mov pos, c 指令包装成 统一的文件view
+并利用了缓冲技术和 消费者和生产者同步的机制，这个文件view主要就是设备驱动，或者说设备文件..
+### 2. 键盘
