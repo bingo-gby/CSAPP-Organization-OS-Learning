@@ -28,6 +28,7 @@
   - [1. IO设备](#1-io设备)
     - [1. 显示器](#1-显示器)
     - [2. 键盘](#2-键盘)
+    - [3. 生磁盘的使用](#3-生磁盘的使用)
 
 <!-- /TOC -->
 
@@ -553,7 +554,7 @@ ps: 磁盘跟内存那个交换区就叫做 swap分区
 ## 1. IO设备
 ### 1. 显示器
 操作系统给用户提供文件视图，对应不同的设备，不同设备有不同的文件视图。通常不管是什么设备，都是统一的接口，例如open、read、write等，不同设备对应不同的设备文件，根据设备文件找到对应控制器地址、内容格式等。外设驱动的三件事情：
-1. 发出out指令(最核心的指令)
+1. 发出out指令(最核心的指令)  cpu把数据发到输出设备
 2. 形成文件视图
 3. 形成中断处理
 
@@ -586,3 +587,24 @@ int copy_process(...)
 上面的汇编 mov pos,c 是把c移到pos，不同的汇编format而已，printf主要就是将mov pos, c 指令包装成 统一的文件view
 并利用了缓冲技术和 消费者和生产者同步的机制，这个文件view主要就是设备驱动，或者说设备文件..
 ### 2. 键盘
+敲键盘就形成中断，从中断初始化开始..
+```
+void con_init(void) //应为键盘也是console的一部分
+{ set_trap_gate(0x21, &keyboard_interrupt); }   // 跳到keyboard_interrupt中断处理函数
+
+// 在kernel/chr_drv/keyboard.S中
+.globl _keyboard_interrupt
+_keyboard_interrupt:
+inb $0x60,%al //从端口0x60读扫描码   最核心的指令   跟out相反，这个是读入
+call key_table(,%eax,4) //调用key_table+eax*4    key_table就是个函数数组，执行里面显示字符的函数
+... push $0 call _do_tty_interrupt    
+```
+接着从key_map中取出ASCII码，put_queue将ASCII码放到 con.read_q 队列。
+<img src="photos/x.png" width="75%">  
+先把数据放到read_q里面，然后处理，然后回显（read_q 到write_q队列中），显示在屏幕上。  
+<img src="photos/h.png" width="75%">  
+
+### 3. 生磁盘的使用
+
+
+ 
