@@ -605,6 +605,13 @@ call key_table(,%eax,4) //调用key_table+eax*4    key_table就是个函数数�
 <img src="photos/h.png" width="75%">  
 
 ### 3. 生磁盘的使用
+磁盘结构如下：  
+<img src="photos/cipan.png" width="75%">  
+磁盘读写:控制器->磁头移动到磁道 -> 磁道旋转到对应扇区 -> 磁生电/电生磁,最直接的使用磁盘通常只要往控制器里面写入 柱面 磁头 扇区 缓存位置...  
+<img src="photos/chs.png" width="75%">  
+上面的需要知道的太多了，所以需要抽象一下...  
+1. 第一层抽象就是通过盘块号（block），驱动从block计算成chs，
 
 
- 
+
+
